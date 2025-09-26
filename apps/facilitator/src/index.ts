@@ -5,6 +5,7 @@ import { ethers } from 'ethers';
 import { PaymentPayload } from './types';
 import { getEnv } from './env';
 import { decodeBase64Json } from './utils/helpers';
+import { verifyPaymentOnChain, settleWithPreFundedBalance } from './services/payment';
 
 const app = express();
 app.use(cors());
@@ -75,11 +76,11 @@ app.post('/verify', async (req: any, res: any) => {
       nonce: payload.nonce
     };
     console.log('FACILITATOR: typed-data domain=', JSON.stringify(domain));
-    console.log('FACILITATOR: types=', JSON.stringify(types));
     console.log('FACILITATOR: message=', JSON.stringify(message));
     console.log('FACILITATOR: signature=', payload.signature);
     try {
       const recovered = ethers.verifyTypedData(domain, types, message, payload.signature);
+      console.log(`Recovered address: ${recovered}`);
       if (recovered.toLowerCase() !== payload.from.toLowerCase()) {
         errors.push('signature_mismatch');
       }
@@ -106,6 +107,113 @@ app.post('/verify', async (req: any, res: any) => {
   return res.json({ success: true });
 });
 
+app.post('/settle', async (req: any, res: any) => {
+  const body = req.body || {};
+  const b64 = body.paymentPayloadBase64 || (req.headers['x-payment'] as string) || undefined;
+  const payload = decodeBase64Json<PaymentPayload>(b64);
+  if (!payload) return res.status(400).json({ success: false, errors: ['invalid_payload'] });
+
+  // As a basic replay protection, mark nonce as used
+  console.log(`[SETTLE] Checking nonce: ${payload.nonce}, used: ${usedNonces.has(payload.nonce)}`);
+  if (usedNonces.has(payload.nonce)) {
+    console.log(`[SETTLE] Nonce replay detected: ${payload.nonce}`);
+    return res.status(400).json({ success: false, errors: ['nonce_replay'] });
+  }
+  usedNonces.add(payload.nonce);
+  console.log(`[SETTLE] Nonce marked as used: ${payload.nonce}, total used: ${usedNonces.size}`);
+
+  // Check for cross-chain payment request
+  const userPreferredChain = req.headers['x-user-chain'] as string;
+  const targetChain = (req.headers['x-target-chain'] as string) || 'polygon-amoy';
+  const resourceServerAddress = req.headers['x-resource-server-address'] as string;
+
+  console.log(`[FACILITATOR] Settle request:`, {
+    userPreferredChain,
+    targetChain,
+    paymentNetwork: payload.chainId,
+    isCrossChain: userPreferredChain && userPreferredChain !== targetChain,
+  });
+
+  // Always settle instantly on target chain
+  if (userPreferredChain && userPreferredChain !== targetChain) {
+    console.log(`[INSTANT-SETTLEMENT] Cross-chain payment detected: ${userPreferredChain} → ${targetChain}`);
+    console.log(`[INSTANT-SETTLEMENT] Settling instantly on ${targetChain} with pre-funded balance`);
+
+    // Verify payment was received on userPreferredChain by executing the transferWithAuthorization
+    const paymentReceived = await verifyPaymentOnChain(userPreferredChain, payload);
+    if (!paymentReceived) {
+      console.error(`[INSTANT-SETTLEMENT] Payment verification failed on ${userPreferredChain}`);
+      return res.status(400).json({
+        success: false,
+        errors: ['payment_verification_failed']
+      });
+    }
+
+    // Use pre-funded balance on targetChain for instant settlement
+    const settlementResult = await settleWithPreFundedBalance(targetChain, payload, resourceServerAddress);
+    if (!settlementResult.success) {
+      console.error(`[INSTANT-SETTLEMENT] Settlement failed:`, settlementResult.error);
+      return res.status(500).json({
+        success: false,
+        errors: ['instant_settlement_failed', settlementResult.error]
+      });
+    }
+
+    // TODO: Here we can add background bridge functionality with a queue or some sorta stack
+
+    // Generate a proper transaction hash for instant settlement
+    const instantTxHash = `0x${Buffer.from(`instant-${payload.nonce}-${Date.now()}`).toString('hex').padStart(64, '0')}`;
+
+    const response = {
+      success: true,
+      transaction: instantTxHash,
+      network: targetChain,
+      payer: payload.from
+    };
+
+    const b64resp = Buffer.from(JSON.stringify(response)).toString('base64');
+    res.setHeader('X-PAYMENT-RESPONSE', b64resp);
+    return res.json(response);
+  }
+
+  // Same-chain settlement using instant settlement model
+  console.log(`[INSTANT-SETTLEMENT] Same-chain payment detected: ${targetChain} → ${targetChain}`);
+  console.log(`[INSTANT-SETTLEMENT] Settling instantly on ${targetChain} with pre-funded balance`);
+
+  // For same-chain payments, we still need to verify the payment was received
+  const paymentReceived = await verifyPaymentOnChain(targetChain, payload);
+  if (!paymentReceived) {
+    console.error(`[INSTANT-SETTLEMENT] Payment verification failed on ${targetChain}`);
+    return res.status(400).json({
+      success: false,
+      errors: ['payment_verification_failed']
+    });
+  }
+
+  // Use pre-funded balance for instant settlement
+  const settlementResult = await settleWithPreFundedBalance(targetChain, payload, resourceServerAddress);
+  if (!settlementResult.success) {
+    console.error(`[INSTANT-SETTLEMENT] Settlement failed:`, settlementResult.error);
+    return res.status(500).json({
+      success: false,
+      errors: ['instant_settlement_failed', settlementResult.error]
+    });
+  }
+
+  // Generate a proper transaction hash for instant settlement
+  const instantTxHash = `0x${Buffer.from(`instant-${payload.nonce}-${Date.now()}`).toString('hex').padStart(64, '0')}`;
+
+  const response = {
+    success: true,
+    transaction: instantTxHash,
+    network: targetChain,
+    payer: payload.from
+  };
+
+  const b64resp = Buffer.from(JSON.stringify(response)).toString('base64');
+  res.setHeader('X-PAYMENT-RESPONSE', b64resp);
+  return res.json(response);
+});
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 

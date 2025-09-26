@@ -4,6 +4,7 @@ import cors from 'cors';
 import { ethers } from 'ethers';
 import { PaymentPayload } from './types';
 import { getEnv } from './env';
+import { decodeBase64Json } from './utils/helpers';
 
 const app = express();
 app.use(cors());
@@ -13,16 +14,7 @@ const { PORT } = getEnv();
 
 // In-memory nonce store to prevent replay attacks
 const usedNonces = new Set<string>();
-
-function decodeBase64Json<T = any>(b64?: string): T | null {
-  if (!b64) return null;
-  try {
-    const json = Buffer.from(b64, 'base64').toString('utf8');
-    return JSON.parse(json) as T;
-  } catch (e) {
-    return null;
-  }
-}
+console.log(`[FACILITATOR] Starting with empty nonce store`);
 
 app.get('/supported', (_req: any, res: any) => {
   res.json({
@@ -54,7 +46,10 @@ app.post('/verify', async (req: any, res: any) => {
   if (now > payload.validBefore) errors.push('expired');
   if (usedNonces.has(payload.nonce)) errors.push('nonce_replay');
 
+  // Try recover address from signature by recreating EIP-191 prefixed hash of payload
+  // Compute digest as keccak256 of JSON string and verify signature correctness
   try {
+    // Try EIP-712 (TransferWithAuthorization) verification first
     const domain = {
       name: 'USDC',
       version: '2',
@@ -89,6 +84,7 @@ app.post('/verify', async (req: any, res: any) => {
         errors.push('signature_mismatch');
       }
     } catch (e) {
+      // Fallback: keccak256 of JSON scheme - try to recover using raw hash
       try {
         const serialized = JSON.stringify(message);
         const hash = ethers.keccak256(ethers.toUtf8Bytes(serialized));
@@ -109,6 +105,7 @@ app.post('/verify', async (req: any, res: any) => {
 
   return res.json({ success: true });
 });
+
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 

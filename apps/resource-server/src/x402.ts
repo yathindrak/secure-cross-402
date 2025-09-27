@@ -1,6 +1,6 @@
 import axios from 'axios';
+import { PaymentRequirements } from './types';
 import { getEnv } from './env';
-import { PaymentRequirements } from './types.js';
 
 const { FACILITATOR_URL } = getEnv();
 

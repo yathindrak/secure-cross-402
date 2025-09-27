@@ -2,8 +2,8 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { getEnv } from './env';
-import { buildPaymentRequirements, verifyPayment, settlePayment } from './x402.js';
-import { summarize } from './premium/summarize.js';
+import { buildPaymentRequirements, verifyPayment, settlePayment } from './x402';
+import { summarize } from './premium/summarize';
 import { getUsdcAddressForChain } from './utils/helpers';
 
 const app = express();

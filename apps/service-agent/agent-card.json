@@ -1,0 +1,26 @@
+{
+  "name": "Service Agent",
+  "url": "http://localhost:5402/a2a",
+  "preferredTransport": "JSONRPC",
+  "description": "Provides premium summarization skill (premium.summarize). This is a demo Service Agent that requires an X-PAYMENT for premium operations.",
+  "contact": {
+    "maintainer": "Yathindra Kodithuwakku",
+    "email": "yathindrarawya123@gmail.com"
+  },
+  "skills": [
+    {
+      "id": "premium.summarize",
+      "title": "Premium Summarize",
+      "description": "Summarize long text with higher accuracy and length limits. Requires a payment via the x402 payment flow.",
+      "price": {
+        "amount": 10000,
+        "decimals": 6,
+        "token": "USDC",
+        "network": "polygon-amoy"
+      }
+    }
+  ],
+  "capabilities": {
+    "streaming": false
+  }
+}

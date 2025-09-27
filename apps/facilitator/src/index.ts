@@ -2,10 +2,11 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { ethers } from 'ethers';
-import { PaymentPayload } from './types';
+import { PaymentPayload, RiskConfig, VerifyResponse } from './types';
 import { getEnv } from './env';
 import { decodeBase64Json } from './utils/helpers';
 import { verifyPaymentOnChain, settleWithPreFundedBalance } from './services/payment';
+import { calculateRiskScore } from './services/riskAnalysis';
 
 const app = express();
 app.use(cors());
@@ -16,6 +17,58 @@ const { PORT } = getEnv();
 // In-memory nonce store to prevent replay attacks
 const usedNonces = new Set<string>();
 console.log(`[FACILITATOR] Starting with empty nonce store`);
+
+// Default risk configuration
+const DEFAULT_RISK_CONFIG: RiskConfig = {
+  criticalThreshold: 30,
+  highThreshold: 60,
+  mediumThreshold: 80,
+  actions: {
+    onCritical: 'reject',
+    onHigh: 'allow',
+    onMedium: 'allow',
+    onLow: 'allow'
+  },
+  sanctionsHandling: {
+    rejectOnSanctions: true,
+    rejectOnChainalysis: true,
+    rejectOnBlacklist: true
+  },
+  highValueThreshold: '1000000000000000000000', // 1000 USDC in wei
+  highValueActions: {
+    requireKyc: false, // No manual KYC requirement for speed
+    requireAdditionalVerification: false, // No manual verification for speed
+    enhancedMonitoring: true
+  },
+  enableDetailedLogging: true,
+  enableRiskProfileResponse: true
+};
+
+// Helper function to determine action based on risk score and config
+function determineAction(riskLevel: string, config: RiskConfig, paymentAmount?: string): {
+  action: 'reject' | 'allow';
+  reason: string;
+} {
+  // Check for high-value transactions
+  if (paymentAmount && BigInt(paymentAmount) > BigInt(config.highValueThreshold)) {
+    if (config.highValueActions.enhancedMonitoring) {
+      return { action: 'allow', reason: 'High-value transaction requires enhanced monitoring' };
+    }
+  }
+
+  // Determine action based on risk level
+  switch (riskLevel) {
+    case 'CRITICAL':
+      return { action: config.actions.onCritical, reason: 'Critical risk level detected' };
+    case 'HIGH':
+      return { action: config.actions.onHigh, reason: 'High risk level detected' };
+    case 'MEDIUM':
+      return { action: config.actions.onMedium, reason: 'Medium risk level detected' };
+    case 'LOW':
+    default:
+      return { action: config.actions.onLow, reason: 'Low risk level' };
+  }
+}
 
 app.get('/supported', (_req: any, res: any) => {
   res.json({
@@ -34,8 +87,84 @@ app.post('/verify', async (req: any, res: any) => {
   const payload = decodeBase64Json<PaymentPayload>(b64);
   if (!payload) return res.status(400).json({ success: false, errors: ['invalid_payload'] });
 
+  // Get risk configuration from request or use default
+  const riskConfig: RiskConfig = body.riskConfig || DEFAULT_RISK_CONFIG;
+
   const now = Math.floor(Date.now() / 1000);
   const errors: string[] = [];
+
+  // Perform comprehensive risk analysis
+  let riskProfile;
+  let action: 'reject' | 'allow' = 'allow';
+  let reason = '';
+
+  try {
+    riskProfile = await calculateRiskScore(payload.from);
+    
+    // Determine action based on risk profile and configuration
+    const actionResult = determineAction(riskProfile.level, riskConfig, payload.value);
+    action = actionResult.action;
+    reason = actionResult.reason;
+
+    // Additional sanctions checks based on configuration
+    if (riskConfig.sanctionsHandling.rejectOnSanctions && riskProfile.factors.addressSecurity.sanctioned) {
+      action = 'reject';
+      reason = 'Address is on sanctions list';
+    }
+    if (riskConfig.sanctionsHandling.rejectOnChainalysis && riskProfile.factors.addressSecurity.chainalysisSanctioned) {
+      action = 'reject';
+      reason = 'Address is sanctioned by Chainalysis';
+    }
+    if (riskConfig.sanctionsHandling.rejectOnBlacklist && riskProfile.factors.addressSecurity.blacklist) {
+      action = 'reject';
+      reason = 'Address is on blacklist';
+    }
+
+    console.log(`[VERIFY] Risk analysis for ${payload.from}:`, {
+      score: riskProfile.score,
+      level: riskProfile.level,
+      action,
+      reason
+    });
+
+    // Log detailed risk information if enabled
+    if (riskConfig.enableDetailedLogging) {
+      console.log(`[VERIFY] Detailed risk profile:`, {
+        address: payload.from,
+        amount: payload.value,
+        riskProfile,
+        action,
+        reason,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+  } catch (error) {
+    console.error('[VERIFY] Risk analysis failed:', error);
+    // On risk analysis failure, default to allow for speed
+    action = 'allow';
+    reason = 'Risk analysis failed - allowing';
+    console.log('[VERIFY] Risk analysis failed, defaulting to allow');
+  }
+
+  // If risk analysis determined a rejection, return immediately
+  if (action === 'reject') {
+    const response: VerifyResponse = {
+      success: false,
+      action,
+      reason,
+      errors: [reason]
+    };
+    if (riskConfig.enableRiskProfileResponse && riskProfile) {
+      response.riskProfile = {
+        score: riskProfile.score,
+        level: riskProfile.level,
+        factors: riskProfile.factors,
+        metadata: riskProfile.metadata
+      };
+    }
+    return res.status(400).json(response);
+  }
 
   // Accept payments from any supported chain for instant settlement
   const supportedChainIds = [80002, 8453, 84532, 137]; // polygon-amoy, base, base-sepolia, polygon
@@ -104,7 +233,34 @@ app.post('/verify', async (req: any, res: any) => {
 
   if (errors.length) return res.status(400).json({ success: false, errors });
 
-  return res.json({ success: true });
+  // Prepare response
+  const response: VerifyResponse = {
+    success: action === 'allow',
+    action,
+    reason
+  };
+
+  // Add risk profile to response if enabled
+  if (riskConfig.enableRiskProfileResponse && riskProfile) {
+    response.riskProfile = {
+      score: riskProfile.score,
+      level: riskProfile.level,
+      factors: riskProfile.factors,
+      metadata: riskProfile.metadata
+    };
+  }
+
+  // Add errors if verification failed
+  if (!response.success) {
+    response.errors = [reason];
+  }
+
+  // Return appropriate status code based on action
+  if (!response.success) {
+    return res.status(400).json(response);
+  } else {
+    return res.status(200).json(response);
+  }
 });
 
 app.post('/settle', async (req: any, res: any) => {

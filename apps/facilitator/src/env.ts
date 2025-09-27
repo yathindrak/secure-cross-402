@@ -1,7 +1,8 @@
 export const getEnv = () => {
   const env = {
     PORT: process.env.PORT,
-    FACILITATOR_PRIVATE_KEY: process.env.FACILITATOR_PRIVATE_KEY || process.env.PRIVATE_KEY,
+    FACILITATOR_PRIVATE_KEY: process.env.FACILITATOR_PRIVATE_KEY,
+    CHAINALYSIS_ORACLE_CONTRACT_ADDRESS: process.env.CHAINALYSIS_ORACLE_CONTRACT_ADDRESS,
   };
 
   for (const [key, value] of Object.entries(env)) {

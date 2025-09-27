@@ -2,7 +2,7 @@
   "name": "Service Agent",
   "url": "http://localhost:5402/a2a",
   "preferredTransport": "JSONRPC",
-  "description": "Provides premium summarization skill (premium.summarize). This is a demo Service Agent that requires an X-PAYMENT for premium operations.",
+  "description": "Provides premium summarization skill (premium.summarize) using x402 resource server",
   "contact": {
     "maintainer": "Yathindra Kodithuwakku",
     "email": "yathindrarawya123@gmail.com"

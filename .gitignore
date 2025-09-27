@@ -36,3 +36,19 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+contracts/node_modules/
+# Foundry build files
+contracts/cache/
+contracts/out/
+contracts/lib/
+contracts/broadcast/
+contracts/docs/
+
+# Foundry broadcast logs (allow structure but ignore specific deployments)
+!/broadcast
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+
+# Package manager files
+contracts/package-lock.json

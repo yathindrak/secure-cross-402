@@ -1,8 +1,10 @@
 import axios from 'axios';
 import { createPaymentPayload, encodePaymentPayload } from './payment';
 import { getEnv } from './env';
+import { db, schema } from '@repo/database';
+import { eq } from 'drizzle-orm';
 
-export async function sendMessage(serviceUrl: string, skill: string, input: any) {
+export async function sendMessage(serviceUrl: string, skill: string, input: any, correlationId: string) {
   const { ADDRESS } = getEnv();
   
   const client = axios.create({ baseURL: serviceUrl, timeout: 40000 });
@@ -14,7 +16,8 @@ export async function sendMessage(serviceUrl: string, skill: string, input: any)
   
   // First call without payment
   try {
-    const resp = await client.post('/a2a', payload);
+    const initialHeaders = { 'X-CORRELATION-ID': correlationId, 'X-USER-CHAIN': userPreferredChain };
+    const resp = await client.post('/a2a', payload, { headers: initialHeaders });
     if (resp.data && resp.data.error && resp.data.error.code === 402) {
       // Got payment required info from service agent
       const accepts = resp.data.error.data?.accepts || resp.data.error.data?.accepts;
@@ -24,6 +27,9 @@ export async function sendMessage(serviceUrl: string, skill: string, input: any)
 
       if (!first?.maxAmountRequired) {
         throw new Error('Max amount required not found');
+      }
+      if (!first?.payTo) {
+        throw new Error('PayTo address not found in accepts');
       }
 
       console.log(`[CLIENT] First max amount required: ${first?.maxAmountRequired}`);
@@ -50,31 +56,32 @@ export async function sendMessage(serviceUrl: string, skill: string, input: any)
         'polygon': '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
         'polygon-amoy': '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582'
       };
-      const userChainId = chainIdMap[userPreferredChain] || 80002;
-      const userUsdcAddress = usdcAddressMap[userPreferredChain];
       
-      const payment = await createPaymentPayload(
-        ADDRESS || '', 
-        first.payTo, 
-        value, // Use original amount - facilitator handles bridging
-        userUsdcAddress, // USDC address for user's preferred chain
-        userChainId // User's preferred chain ID
-      );
+      const chainId = chainIdMap[userPreferredChain];
+      const usdcAddress = usdcAddressMap[userPreferredChain];
+
+      if (!chainId || !usdcAddress) {
+        throw new Error(`Unsupported chain: ${userPreferredChain}`);
+      }
+
+      const payment = await createPaymentPayload(ADDRESS, first.payTo, value, usdcAddress, chainId);
       const b64 = encodePaymentPayload(payment);
+
+      await db.update(schema.paymentLogs).set({
+        paymentStatus: 'PAYMENT_PAYLOAD_CREATED',
+        paymentPayload: b64,
+        timestamp: new Date(),
+      }).where(eq(schema.paymentLogs.correlationId, correlationId));
       
       // Prepare headers for retry
-      const headers: Record<string, string> = { 'X-PAYMENT': b64 };
-      
-      // Always add user chain header for facilitator to know where to expect payment
-      headers['X-USER-CHAIN'] = userPreferredChain;
-      console.log(`[CLIENT] Adding X-USER-CHAIN header: ${userPreferredChain}`);
-      
-      // Retry initial resource call by sending to service agent with X-PAYMENT header (service will forward)
-      const retryResp = await client.post('/a2a', payload, { headers });
-      return retryResp.data;
+      const headers = { 'X-PAYMENT': b64, 'X-CORRELATION-ID': correlationId, 'X-USER-CHAIN': userPreferredChain };
+      // Retry original call with payment
+      const respWithPayment = await client.post('/a2a', payload, { headers });
+      return respWithPayment.data;
     }
     return resp.data;
-  } catch (e: any) {
+  }
+  catch (e) {
     throw e;
   }
 }

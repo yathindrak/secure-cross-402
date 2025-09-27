@@ -7,12 +7,21 @@ import { getEnv } from './env';
 import { decodeBase64Json } from './utils/helpers';
 import { verifyPaymentOnChain, settleWithPreFundedBalance } from './services/payment';
 import { calculateRiskScore } from './services/riskAnalysis';
+import { db, schema } from '@repo/database'; // Import `db` and the `schema` object
+import { eq } from 'drizzle-orm';
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
 const { PORT } = getEnv();
+
+const explorerUrlMap: Record<string, string> = {
+  'polygon-amoy': 'https://amoy.polygonscan.com/tx/',
+  'base-sepolia': 'https://sepolia.basescan.org/tx/',
+  'polygon': 'https://polygonscan.com/tx/',
+  'base': 'https://basescan.org/tx/',
+};
 
 // In-memory nonce store to prevent replay attacks
 const usedNonces = new Set<string>();
@@ -93,6 +102,8 @@ app.post('/verify', async (req: any, res: any) => {
   const now = Math.floor(Date.now() / 1000);
   const errors: string[] = [];
 
+  const correlationId = req.headers['x-correlation-id'] as string;
+
   // Perform comprehensive risk analysis
   let riskProfile;
   let action: 'reject' | 'allow' = 'allow';
@@ -139,12 +150,57 @@ app.post('/verify', async (req: any, res: any) => {
       });
     }
 
+    // Log detailed risk information to Prisma if enabled
+    if (riskConfig.enableDetailedLogging) {
+      const existingLog = await db.query.paymentLogs.findFirst({
+        where: eq(schema.paymentLogs.correlationId, correlationId),
+      });
+
+      const logEntry = {
+        facilitatorUrl: `http://localhost:${PORT}`,
+        paymentPayload: JSON.stringify(payload),
+        riskLevel: riskProfile.level,
+        riskRationale: reason,
+        paymentStatus: action === 'allow' ? 'VERIFIED' : 'REJECTED',
+        timestamp: new Date(),
+      };
+
+      if (existingLog) {
+        await db.update(schema.paymentLogs).set(logEntry).where(eq(schema.paymentLogs.correlationId, correlationId));
+      } else {
+        await db.insert(schema.paymentLogs).values({ ...logEntry, correlationId });
+      }
+      console.log(`[VERIFY] Detailed risk profile logged to Prisma for correlationId: ${correlationId}`);
+    }
+
   } catch (error) {
     console.error('[VERIFY] Risk analysis failed:', error);
     // On risk analysis failure, default to allow for speed
     action = 'allow';
     reason = 'Risk analysis failed - allowing';
     console.log('[VERIFY] Risk analysis failed, defaulting to allow');
+    
+    // Also log the failure to the database, creating a new entry if correlationId doesn't exist
+    const existingLog = await db.query.paymentLogs.findFirst({
+      where: eq(schema.paymentLogs.correlationId, correlationId),
+    });
+
+    const errorLogEntry = {
+      facilitatorUrl: `http://localhost:${PORT}`,
+      paymentPayload: JSON.stringify(payload),
+      riskRationale: String(error),
+      paymentStatus: 'RISK_ANALYSIS_FAILED',
+      timestamp: new Date(),
+    };
+    
+    if (existingLog) {
+      await db.update(schema.paymentLogs).set(errorLogEntry).where(eq(schema.paymentLogs.correlationId, correlationId));
+    } else {
+      // Only insert if correlationId is available, otherwise it would violate not-null constraint
+      if (correlationId) {
+        await db.insert(schema.paymentLogs).values({ ...errorLogEntry, correlationId });
+      }
+    }
   }
 
   // If risk analysis determined a rejection, return immediately
@@ -269,6 +325,8 @@ app.post('/settle', async (req: any, res: any) => {
   const payload = decodeBase64Json<PaymentPayload>(b64);
   if (!payload) return res.status(400).json({ success: false, errors: ['invalid_payload'] });
 
+  const correlationId = req.headers['x-correlation-id'] as string;
+
   // As a basic replay protection, mark nonce as used
   console.log(`[SETTLE] Checking nonce: ${payload.nonce}, used: ${usedNonces.has(payload.nonce)}`);
   if (usedNonces.has(payload.nonce)) {
@@ -296,8 +354,8 @@ app.post('/settle', async (req: any, res: any) => {
     console.log(`[INSTANT-SETTLEMENT] Settling instantly on ${targetChain} with pre-funded balance`);
 
     // Verify payment was received on userPreferredChain by executing the transferWithAuthorization
-    const paymentReceived = await verifyPaymentOnChain(userPreferredChain, payload);
-    if (!paymentReceived) {
+    const verificationTxHash = await verifyPaymentOnChain(userPreferredChain, payload);
+    if (!verificationTxHash) {
       console.error(`[INSTANT-SETTLEMENT] Payment verification failed on ${userPreferredChain}`);
       return res.status(400).json({
         success: false,
@@ -318,7 +376,19 @@ app.post('/settle', async (req: any, res: any) => {
     // TODO: Here we can add background bridge functionality with a queue or some sorta stack
 
     // Generate a proper transaction hash for instant settlement
-    const instantTxHash = `0x${Buffer.from(`instant-${payload.nonce}-${Date.now()}`).toString('hex').padStart(64, '0')}`;
+    const instantTxHash = settlementResult.transactionHash;
+
+    // Log successful instant settlement to Prisma
+    await db.update(schema.paymentLogs).set({
+      settlementTxHash: instantTxHash,
+      verificationTxHash: verificationTxHash,
+      verificationTxUrl: verificationTxHash ? `${explorerUrlMap[userPreferredChain]}${verificationTxHash}` : null,
+      paymentStatus: 'SETTLED',
+      settlementTxUrl: instantTxHash ? `${explorerUrlMap[targetChain]}${instantTxHash}` : null,
+      userChain: userPreferredChain,
+      serverChain: targetChain,
+    }).where(eq(schema.paymentLogs.correlationId, correlationId));
+    console.log(`[SETTLE] Instant settlement logged to Prisma for correlationId: ${correlationId}`);
 
     const response = {
       success: true,
@@ -337,8 +407,8 @@ app.post('/settle', async (req: any, res: any) => {
   console.log(`[INSTANT-SETTLEMENT] Settling instantly on ${targetChain} with pre-funded balance`);
 
   // For same-chain payments, we still need to verify the payment was received
-  const paymentReceived = await verifyPaymentOnChain(targetChain, payload);
-  if (!paymentReceived) {
+  const verificationTxHash = await verifyPaymentOnChain(targetChain, payload);
+  if (!verificationTxHash) {
     console.error(`[INSTANT-SETTLEMENT] Payment verification failed on ${targetChain}`);
     return res.status(400).json({
       success: false,
@@ -357,7 +427,19 @@ app.post('/settle', async (req: any, res: any) => {
   }
 
   // Generate a proper transaction hash for instant settlement
-  const instantTxHash = `0x${Buffer.from(`instant-${payload.nonce}-${Date.now()}`).toString('hex').padStart(64, '0')}`;
+  const instantTxHash = settlementResult.transactionHash;
+
+  // Log successful instant settlement to Prisma
+  await db.update(schema.paymentLogs).set({
+    settlementTxHash: instantTxHash,
+    verificationTxHash: verificationTxHash,
+    verificationTxUrl: verificationTxHash ? `${explorerUrlMap[targetChain]}${verificationTxHash}` : null,
+    paymentStatus: 'SETTLED',
+    settlementTxUrl: instantTxHash ? `${explorerUrlMap[targetChain]}${instantTxHash}` : null,
+    userChain: targetChain,
+    serverChain: targetChain,
+  }).where(eq(schema.paymentLogs.correlationId, correlationId));
+  console.log(`[SETTLE] Instant settlement (same-chain) logged to Prisma for correlationId: ${correlationId}`);
 
   const response = {
     success: true,

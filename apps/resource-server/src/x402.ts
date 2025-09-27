@@ -20,10 +20,10 @@ export function buildPaymentRequirements(resourceUrl: string, payTo: string, ass
   };
 }
 
-export async function verifyPayment(paymentPayloadBase64: string) {
+export async function verifyPayment(paymentPayloadBase64: string, correlationId: string) {
   const url = `${FACILITATOR_URL}/verify`;
   try {
-    const resp = await axios.post(url, { paymentPayloadBase64 }, { timeout: 10_000 });
+    const resp = await axios.post(url, { paymentPayloadBase64 }, { timeout: 10_000, headers: { 'X-CORRELATION-ID': correlationId } });
     return resp.data;
   } catch (err: any) {
     if (err.response) return err.response.data;
@@ -31,7 +31,7 @@ export async function verifyPayment(paymentPayloadBase64: string) {
   }
 }
 
-export async function settlePayment(paymentPayloadBase64: string, userChain?: string, targetChain?: string, resourceServerAddress?: string) {
+export async function settlePayment(paymentPayloadBase64: string, userChain?: string, targetChain?: string, resourceServerAddress?: string, correlationId?: string) {
   const url = `${FACILITATOR_URL}/settle`;
   const headers: Record<string, string> = {};
   if (userChain) {
@@ -42,6 +42,9 @@ export async function settlePayment(paymentPayloadBase64: string, userChain?: st
   }
   if (resourceServerAddress) {
     headers['X-RESOURCE-SERVER-ADDRESS'] = resourceServerAddress;
+  }
+  if (correlationId) {
+    headers['X-CORRELATION-ID'] = correlationId;
   }
   
   try {

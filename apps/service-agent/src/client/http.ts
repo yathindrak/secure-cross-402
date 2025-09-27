@@ -6,9 +6,10 @@ export function createResourceClient(baseURL: string) {
   return client;
 }
 
-export async function callPremiumSummarize(client: any, body: any, paymentHeader?: string, userChain?: string) {
+export async function callPremiumSummarize(client: any, body: any, paymentHeader?: string, userChain?: string, correlationId?: string) {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (paymentHeader) headers['X-PAYMENT'] = paymentHeader;
   if (userChain) headers['X-USER-CHAIN'] = userChain;
+  if (correlationId) headers['X-CORRELATION-ID'] = correlationId;
   return client.post('/premium/summarize', body, { headers });
 }

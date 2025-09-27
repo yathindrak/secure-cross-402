@@ -6,7 +6,7 @@ import { getEnv } from '../env';
 const { FACILITATOR_PRIVATE_KEY } = getEnv();
 const PRIVATE_KEY = FACILITATOR_PRIVATE_KEY;
 
-export async function verifyPaymentOnChain(userChain: string, payload: PaymentPayload): Promise<boolean> {
+export async function verifyPaymentOnChain(userChain: string, payload: PaymentPayload): Promise<string | null> {
   console.log(`[VERIFY-PAYMENT] Verifying payment on ${userChain} for ${payload.from} → ${payload.to}, amount: ${payload.value}`);
 
   try {
@@ -45,14 +45,14 @@ export async function verifyPaymentOnChain(userChain: string, payload: PaymentPa
     console.log(`[VERIFY-PAYMENT] Payment verification: ${paymentReceived ? 'SUCCESS' : 'FAILED'}`);
     console.log(`[VERIFY-PAYMENT] Transaction status: ${receipt.status}`);
 
-    return paymentReceived;
+    return paymentReceived ? tx.hash : null;
   } catch (error) {
     console.error(`[VERIFY-PAYMENT] Error verifying payment on ${userChain}:`, error);
-    return false;
+    return null;
   }
 }
 
-export async function settleWithPreFundedBalance(targetChain: string, payload: PaymentPayload, resourceServerAddress?: string): Promise<{ success: boolean; error?: string }> {
+export async function settleWithPreFundedBalance(targetChain: string, payload: PaymentPayload, resourceServerAddress?: string): Promise<{ success: boolean; error?: string; transactionHash?: string }> {
   console.log(`[SETTLE-PRE-FUNDED] Settling on ${targetChain} with pre-funded balance for ${payload.value}`);
 
   try {
@@ -87,7 +87,7 @@ export async function settleWithPreFundedBalance(targetChain: string, payload: P
     await tx.wait();
     console.log(`[SETTLE-PRE-FUNDED] Settlement transaction confirmed: ${tx.hash}`);
 
-    return { success: true };
+    return { success: true, transactionHash: tx.hash };
   } catch (error) {
     console.error(`[SETTLE-PRE-FUNDED] Error settling on ${targetChain}:`, error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };

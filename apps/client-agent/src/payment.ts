@@ -45,7 +45,7 @@ export async function createPaymentPayload(from: string, to: string, value: stri
   };
 
   const { PRIVATE_KEY } = getEnv();
-  const wallet = new ethers.Wallet(PRIVATE_KEY);
+  const wallet = new ethers.Wallet(PRIVATE_KEY, null); // Explicitly pass null for the provider
 
   // Ensure verifyingContract is a valid address to avoid ENS lookup in signTypedData
   const verifyingContractAddress = ethers.isAddress(verifyingContract) ? verifyingContract : ethers.ZeroAddress;
@@ -55,6 +55,9 @@ export async function createPaymentPayload(from: string, to: string, value: stri
 
   // Sign EIP-712 typed data
   // ethers v6 wallet provides signTypedData
+  console.log('DEBUG: domain before signTypedData:', domain);
+  console.log('DEBUG: types before signTypedData:', types);
+  console.log('DEBUG: message before signTypedData:', message);
   const signature = await (wallet as any).signTypedData(domain, types, message);
   payload.signature = signature;
   // Keep original raw nonce for debugging if needed

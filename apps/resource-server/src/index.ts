@@ -72,7 +72,7 @@ app.post('/premium/summarize', async (req: any, res: any) => {
 app.get('/healthz', (_req: any, res: any) => res.json({ ok: true, facilitator: FACILITATOR_URL }));
 
 app.listen(PORT, () => {
-  console.log(`Resource server listening on port ${PORT}`);
+  console.log(`[RESOURCE-SERVER] listening on port ${PORT}`);
   console.log(`Facilitator: ${FACILITATOR_URL}`);
   console.log(`Target Chain: ${TARGET_CHAIN}`);
 });

@@ -218,5 +218,5 @@ app.post('/settle', async (req: any, res: any) => {
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
 app.listen(Number(PORT), () => {
-  console.log(`Facilitator listening on port ${PORT}`);
+  console.log(`[FACILITATOR] listening on port ${PORT}`);
 });

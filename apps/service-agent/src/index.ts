@@ -52,4 +52,4 @@ app.post('/a2a', async (req: any, res: any) => {
 
 app.get('/healthz', (_req: any, res: any) => res.json({ ok: true, resource: RESOURCE_SERVER_URL }));
 
-app.listen(PORT, () => console.log(`Service Agent listening on ${PORT}, resource=${RESOURCE_SERVER_URL}`));
+app.listen(PORT, () => console.log(`[SERVICE-AGENT] listening on ${PORT}, resource=${RESOURCE_SERVER_URL}`));

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import { ProofOfHuman } from "../src/ProofOfAgentBuilder.sol";
+import {ProofOfAgentBuilder}  from "../src/ProofOfAgentBuilder.sol";
 import { BaseScript } from "./Base.s.sol";
 import { CountryCodes } from "@selfxyz/contracts/contracts/libraries/CountryCode.sol";
 import { console } from "forge-std/console.sol";
@@ -15,7 +15,7 @@ contract DeployProofOfHuman is BaseScript {
     /// @return proofOfHuman The deployed ProofOfHuman contract instance
     /// @dev Requires the following environment variables:
 
-    function run() public broadcast returns (ProofOfHuman proofOfHuman) {
+    function run() public broadcast returns (ProofOfAgentBuilder proofOfHuman) {
         address hubAddress = vm.envAddress("IDENTITY_VERIFICATION_HUB_ADDRESS");
         string[] memory forbiddenCountries = new string[](1);
         
@@ -26,7 +26,7 @@ contract DeployProofOfHuman is BaseScript {
             ofacEnabled: false
         });
 
-        proofOfHuman = new ProofOfHuman(hubAddress, "self-example", verificationConfig);
+        proofOfHuman = new ProofOfAgentBuilder(hubAddress, "self-example", verificationConfig);
 
         console.log("ProofOfHuman deployed to:", address(proofOfHuman));
         console.log("Identity Verification Hub:", hubAddress);

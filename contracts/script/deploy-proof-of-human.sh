@@ -88,7 +88,7 @@ print_success "Contract compilation successful!"
 export IDENTITY_VERIFICATION_HUB_ADDRESS
 
 # Deploy contract
-print_info "Deploying ProofOfHuman contract with placeholder scope..."
+print_info "Deploying ProofOfAgentBuilder contract with placeholder scope..."
 
 DEPLOY_CMD="forge script script/DeployProofOfHuman.s.sol:DeployProofOfHuman --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast"
 
@@ -107,7 +107,7 @@ fi
 # Extract deployed contract address
 BROADCAST_DIR="broadcast/DeployProofOfHuman.s.sol/$CHAIN_ID"
 if [[ -f "$BROADCAST_DIR/run-latest.json" ]]; then
-    CONTRACT_ADDRESS=$(jq -r '.transactions[] | select(.contractName == "ProofOfHuman") | .contractAddress' "$BROADCAST_DIR/run-latest.json" | head -1)
+    CONTRACT_ADDRESS=$(jq -r '.transactions[] | select(.contractName == "ProofOfAgentBuilder") | .contractAddress' "$BROADCAST_DIR/run-latest.json" | head -1)
     
     if [[ -n "$CONTRACT_ADDRESS" && "$CONTRACT_ADDRESS" != "null" ]]; then
         print_success "Contract deployed at: $CONTRACT_ADDRESS"
@@ -146,7 +146,7 @@ if [ -n "$CELOSCAN_API_KEY" ]; then
     print_info "Constructor args: $CONSTRUCTOR_ARGS"
     
     # Use forge verify-contract with constructor arguments
-    forge verify-contract --constructor-args $CONSTRUCTOR_ARGS --chain-id $CHAIN_NAME $CONTRACT_ADDRESS src/ProofOfHuman.sol:ProofOfHuman --watch
+    forge verify-contract --constructor-args $CONSTRUCTOR_ARGS --chain-id $CHAIN_NAME $CONTRACT_ADDRESS src/ProofOfAgentBuilder.sol:ProofOfAgentBuilder --watch
     
     if [ $? -ne 0 ]; then
         print_warning "Verification failed. You can verify manually at:"

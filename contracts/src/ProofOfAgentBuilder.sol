@@ -18,9 +18,14 @@ contract ProofOfAgentBuilder is SelfVerificationRoot {
     bytes public lastUserData;
     SelfStructs.VerificationConfigV2 public verificationConfig;
     bytes32 public verificationConfigId;
-    address public lastUserAddress;
+    address public lastUserAddress; // This will now track the *last* verified user, but not be used for agent creation authorization.
+
+    mapping(address => address[]) public userAgents;
+    mapping(address => bool) public isVerifiedUser; // New mapping to track all verified users
+    mapping(address => bool) public isAgentVerified; // New mapping to track verified agents
 
     event VerificationCompleted(ISelfVerificationRoot.GenericDiscloseOutputV2 output, bytes userData);
+    event AgentCreated(address indexed user, address indexed agentAddress);
 
     /**
      * @notice Constructor for the test contract
@@ -56,12 +61,37 @@ contract ProofOfAgentBuilder is SelfVerificationRoot {
         lastOutput = output;
         lastUserData = userData;
         lastUserAddress = address(uint160(output.userIdentifier));
+        isVerifiedUser[address(uint160(output.userIdentifier))] = true; // Mark the user as verified
 
         emit VerificationCompleted(output, userData);
     }
 
     function setConfigId(bytes32 configId) external {
         verificationConfigId = configId;
+    }
+
+    /**
+     * @notice Allows a verified user to register a new agent.
+     * @param _agentAddress The address of the agent to register.
+     */
+    function createAgent(address _agentAddress) external {
+        require(isVerifiedUser[msg.sender], "User not verified"); // Check if the sender is a verified user
+        userAgents[msg.sender].push(_agentAddress);
+        isAgentVerified[_agentAddress] = true; // Mark the agent as verified
+        emit AgentCreated(msg.sender, _agentAddress);
+    }
+
+    /**
+     * @notice Retrieves all agent addresses associated with a given user.
+     * @param _user The address of the user.
+     * @return An array of agent addresses.
+     */
+    function getUserAgents(address _user) external view returns (address[] memory) {
+        return userAgents[_user];
+    }
+
+    function isVerifiedAgent(address _agentAddress) external view returns (bool) {
+        return isAgentVerified[_agentAddress];
     }
 
     function getConfigId(

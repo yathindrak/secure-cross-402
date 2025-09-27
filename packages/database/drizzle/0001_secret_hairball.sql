@@ -1,0 +1,1 @@
+ALTER TABLE "payment_logs" ADD COLUMN "resource_server_url" varchar(256);

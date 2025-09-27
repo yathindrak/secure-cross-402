@@ -1,0 +1,27 @@
+{
+  "version": "5",
+  "dialect": "pg",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1759003788500,
+      "tag": "0000_supreme_makkari",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1759004689027,
+      "tag": "0001_secret_hairball",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1759013842803,
+      "tag": "0002_icy_martin_li",
+      "breakpoints": true
+    }
+  ]
+}

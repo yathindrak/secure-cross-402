@@ -76,7 +76,6 @@ The project's architecture (as illustrated in the `Architecture Diagram.png` dia
 1.  **Setup Environment**
     ```bash
     # Create .env files for each service in apps/<service-name> based on env.example
-    # WARNING: Never commit real keys to version control
     ```
 
 2.  **Compile Packages**
@@ -109,3 +108,5 @@ The project's architecture (as illustrated in the `Architecture Diagram.png` dia
     cd apps/dash
     bun start
     ```
+
+References: https://github.com/AkshatGada/x402_Polygon

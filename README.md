@@ -1,8 +1,8 @@
-# Safe Cross X402
+# Secure Cross X402
 
 ## Project Overview
 
-**Safe Cross X402** introduces a significant architectural **enhancement** to existing x402 payment architectures. At its core, this system empowers users to pay for premium HTTP resources using their preferred blockchain, while resource servers seamlessly receive funds faster on their desired chain. As an initial step, payments are efficiently settled between the **Polygon Amoy testnet** and **Base Sepolia testnet**. While our project demonstrates an Agent-to-Agent (A2A) workflow, it is designed to support single or multiple agents and users consuming a Safe Cross X402 enabled server.
+**Secure Cross X402** introduces a significant architectural **enhancement** to existing x402 payment architectures. At its core, this system empowers users to pay for premium HTTP resources using their preferred blockchain, while resource servers seamlessly receive funds faster on their desired chain. As an initial step, payments are efficiently settled between the **Polygon Amoy testnet** and **Base Sepolia testnet**. While our project demonstrates an Agent-to-Agent (A2A) workflow, it is designed to support single or multiple agents and users consuming a Secure Cross X402 enabled server.
 
 ## Problems with existing x402 architecture
 1. Only supports single chain payments. So both users and servers are forced to use the same chain.
